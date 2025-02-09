@@ -147,7 +147,7 @@ class CudaGraphRunner:
             for bs in self.capture_bs
             if bs <= model_runner.req_to_token_pool.size
             and bs <= model_runner.server_args.cuda_graph_max_bs
-        ]
+        ] + [256]
 
         self.capture_forward_mode = ForwardMode.DECODE
         self.num_tokens_per_bs = 1
