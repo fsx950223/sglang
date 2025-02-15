@@ -24,8 +24,12 @@ import logging
 
 import triton
 import triton.language as tl
-
+import ater as ops
 from sglang.srt.utils import is_hip
+import torch
+k_scale = torch.tensor(1.0, device="cuda")
+v_scale = torch.tensor(1.0, device="cuda")
+
 
 is_hip_ = is_hip()
 
@@ -645,36 +649,81 @@ def decode_attention_fwd(
     sm_scale,
     logit_cap=0.0,
 ):
+    global k_scale, v_scale
     assert num_kv_splits == attn_logits.shape[2]
     kv_group_num = q.shape[1] // v_buffer.shape[1]
+    # ops.paged_attention_rocm(
+    #     o,
+    #     attn_logits,
+    #     attn_logits,
+    #     b_req_idx,
+    #     b_seq_len,
+    # )
+    max_seq_len = b_seq_len.max().item()
+    max_num_partitions = (
+        (max_seq_len + 256 - 1) //
+        256)
 
-    if kv_group_num == 1:
-        # MHA
-        decode_attention_fwd_normal(
-            q,
-            k_buffer,
-            v_buffer,
-            o,
-            req_to_token,
-            b_req_idx,
-            b_seq_len,
-            attn_logits,
-            num_kv_splits,
-            sm_scale,
-            logit_cap,
-        )
-    else:
-        # GQA/MQA/MLA
-        decode_attention_fwd_grouped(
-            q,
-            k_buffer,
-            v_buffer,
-            o,
-            req_to_token,
-            b_req_idx,
-            b_seq_len,
-            attn_logits,
-            num_kv_splits,
-            sm_scale,
-            logit_cap,
-        )
+    tmp_output = torch.empty(
+        size=(b_seq_len.shape[0], q.shape[1], max_num_partitions, q.shape[2]),
+        dtype=o.dtype,
+        device=o.device,
+    )
+    exp_sums = torch.empty(
+        size=(b_seq_len.shape[0], q.shape[1], max_num_partitions),
+        dtype=torch.float32,
+        device=o.device,
+    )
+    max_logits = torch.empty_like(exp_sums)
+    ops.paged_attention_rocm(
+        o,
+        exp_sums,
+        max_logits,
+        tmp_output,
+        q,
+        k_buffer,
+        v_buffer,
+        k_buffer.shape[1],
+        sm_scale,
+        req_to_token[b_req_idx,:],
+        b_seq_len,
+        1,
+        max_seq_len,
+        None,
+        "auto",
+        'HND',
+        k_scale,
+        v_scale,
+        None,
+        256,
+    )
+    # if kv_group_num == 1:
+    #     # MHA
+    #     decode_attention_fwd_normal(
+    #         q,
+    #         k_buffer,
+    #         v_buffer,
+    #         o,
+    #         req_to_token,
+    #         b_req_idx,
+    #         b_seq_len,
+    #         attn_logits,
+    #         num_kv_splits,
+    #         sm_scale,
+    #         logit_cap,
+    #     )
+    # else:
+    #     # GQA/MQA/MLA
+    #     decode_attention_fwd_grouped(
+    #         q,
+    #         k_buffer,
+    #         v_buffer,
+    #         o,
+    #         req_to_token,
+    #         b_req_idx,
+    #         b_seq_len,
+    #         attn_logits,
+    #         num_kv_splits,
+    #         sm_scale,
+    #         logit_cap,
+    #     )

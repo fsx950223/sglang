@@ -216,10 +216,11 @@ class GroupCoordinator:
             self.device = torch.device("cpu")
 
         self.use_pynccl = use_pynccl
+        use_custom_allreduce=False
         self.use_custom_allreduce = use_custom_allreduce
         self.use_hpu_communicator = use_hpu_communicator
         self.use_xpu_communicator = use_xpu_communicator
-
+        
         # lazy import to avoid documentation build error
         from sglang.srt.distributed.device_communicators.custom_all_reduce import (
             CustomAllreduce,
