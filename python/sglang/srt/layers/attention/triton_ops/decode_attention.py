@@ -659,7 +659,7 @@ def decode_attention_fwd(
     #     b_req_idx,
     #     b_seq_len,
     # )
-    max_seq_len = b_seq_len.max().item()
+    max_seq_len = 1024
     max_num_partitions = (
         (max_seq_len + 256 - 1) //
         256)
