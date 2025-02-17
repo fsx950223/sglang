@@ -24,7 +24,7 @@ import logging
 
 import triton
 import triton.language as tl
-import ater as ops
+import aiter as ops
 from sglang.srt.utils import is_hip
 import torch
 k_scale = torch.tensor(1.0, device="cuda")
@@ -686,7 +686,7 @@ def decode_attention_fwd(
         k_buffer.shape[1],
         sm_scale,
         req_to_token[b_req_idx,:],
-        b_seq_len,
+        b_seq_len.to(torch.int32),
         1,
         max_seq_len,
         None,
