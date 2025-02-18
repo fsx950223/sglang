@@ -24,6 +24,8 @@ import logging
 
 import triton
 import triton.language as tl
+import torch
+import aiter
 
 from sglang.srt.utils import is_hip
 
@@ -634,34 +636,71 @@ def decode_attention_fwd(
     sm_scale,
     logit_cap=0.0,
 ):
-    assert num_kv_splits == attn_logits.shape[2]
-    kv_group_num = q.shape[1] // v_buffer.shape[1]
+    # assert num_kv_splits == attn_logits.shape[2]
+    # kv_group_num = q.shape[1] // v_buffer.shape[1]
 
-    if kv_group_num == 1:
-        # MHA
-        decode_attention_fwd_normal(
-            q,
-            k_buffer,
-            v_buffer,
-            o,
-            kv_indptr,
-            kv_indices,
-            attn_logits,
-            num_kv_splits,
-            sm_scale,
-            logit_cap,
-        )
-    else:
-        # GQA/MQA/MLA
-        decode_attention_fwd_grouped(
-            q,
-            k_buffer,
-            v_buffer,
-            o,
-            kv_indptr,
-            kv_indices,
-            attn_logits,
-            num_kv_splits,
-            sm_scale,
-            logit_cap,
-        )
+    # if kv_group_num == 1:
+    #     # MHA
+    #     decode_attention_fwd_normal(
+    #         q,
+    #         k_buffer,
+    #         v_buffer,
+    #         o,
+    #         kv_indptr,
+    #         kv_indices,
+    #         attn_logits,
+    #         num_kv_splits,
+    #         sm_scale,
+    #         logit_cap,
+    #     )
+    # else:
+    #     # GQA/MQA/MLA
+    #     decode_attention_fwd_grouped(
+    #         q,
+    #         k_buffer,
+    #         v_buffer,
+    #         o,
+    #         kv_indptr,
+    #         kv_indices,
+    #         attn_logits,
+    #         num_kv_splits,
+    #         sm_scale,
+    #         logit_cap,
+    #     )
+    # max_seq_len = 2048
+    # max_num_partitions = (
+    #     (max_seq_len + 256 - 1) //
+    #     256)
+
+    tmp_output = torch.empty(
+        size=(kv_indptr.shape[0]-1, q.shape[1], num_kv_splits, q.shape[2]),
+        dtype=o.dtype,
+        device=o.device,
+    )
+    exp_sums = torch.empty(
+        size=(kv_indptr.shape[0]-1, q.shape[1], num_kv_splits),
+        dtype=torch.float32,
+        device=o.device,
+    )
+    max_logits = torch.empty_like(exp_sums)
+    
+    aiter.paged_attention_rocm(o,
+                               exp_sums,
+                               max_logits,
+                               tmp_output,
+                               q,
+                               k_buffer,
+                               v_buffer,
+                               sm_scale,
+                               kv_indptr,
+                               kv_indices,
+                               1,
+                               num_kv_splits,
+                               None,
+                               "auto",
+                               'HND',
+                               1.0,
+                               1.0,
+                               None,
+                               256,
+                               )
