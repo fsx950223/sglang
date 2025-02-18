@@ -703,4 +703,5 @@ def decode_attention_fwd(
                                1.0,
                                None,
                                256,
+                               logit_cap,
                                )
