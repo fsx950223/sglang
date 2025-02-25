@@ -126,14 +126,15 @@ def get_batch_sizes_to_capture(model_runner: ModelRunner):
                 )
             )
         )
+    if is_hip_:
+        capture_bs += [i * 8 for i in range(21, 33)]
     capture_bs = [
         bs
         for bs in capture_bs
         if bs <= model_runner.req_to_token_pool.size
         and bs <= server_args.cuda_graph_max_bs
     ]
-    if is_hip_:
-        capture_bs += [i * 8 for i in range(21, 33)]
+
     compile_bs = (
         [bs for bs in capture_bs if bs <= server_args.torch_compile_max_bs]
         if server_args.enable_torch_compile

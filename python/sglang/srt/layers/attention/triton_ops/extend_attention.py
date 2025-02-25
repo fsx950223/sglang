@@ -17,9 +17,10 @@ It supports page size = 1 and prefill with KV cache (i.e. extend).
 """
 
 import torch
+
 import triton
 import triton.language as tl
-
+from sglang import triton_tuner
 from sglang.srt.layers.attention.triton_ops.prefill_attention import (
     context_attention_fwd,
 )
@@ -38,6 +39,23 @@ def tanh(x):
     return 2 * tl.sigmoid(2 * x) - 1
 
 
+@triton_tuner.autotune(
+    configs=[
+        triton.Config(
+            kwargs={"BLOCK_M": 64, "BLOCK_N": 64, "STORE_TRANSPOSE": False}, num_warps=4
+        ),
+        triton.Config(
+            kwargs={"BLOCK_M": 64, "BLOCK_N": 64, "STORE_TRANSPOSE": False}, num_warps=4
+        ),
+        triton.Config(
+            kwargs={"BLOCK_M": 32, "BLOCK_N": 32, "STORE_TRANSPOSE": False}, num_warps=2
+        ),
+        triton.Config(
+            kwargs={"BLOCK_M": 32, "BLOCK_N": 32, "STORE_TRANSPOSE": False}, num_warps=2
+        ),
+    ],
+    key=["stride_obs", "stride_oh"],
+)
 @triton.jit
 def _fwd_kernel(
     Q_Extend,
@@ -74,6 +92,7 @@ def _fwd_kernel(
     BLOCK_M: tl.constexpr,
     BLOCK_N: tl.constexpr,
     USE_CUSTOM_MASK: tl.constexpr,
+    STORE_TRANSPOSE: tl.constexpr,
 ):
     cur_seq = tl.program_id(0)
     cur_head = tl.program_id(1)
@@ -272,9 +291,18 @@ def _fwd_kernel(
         + cur_head * stride_oh
         + offs_dv[None, :]
     )
-    tl.store(
-        O_Extend + offs_o, acc / deno[:, None], mask=mask_m[:, None] & mask_dv[None, :]
-    )
+    if STORE_TRANSPOSE:
+        tl.store(
+            (O_Extend + offs_o).T,
+            (acc / deno[:, None]).T,
+            mask=(mask_m[:, None] & mask_dv[None, :]).T,
+        )
+    else:
+        tl.store(
+            O_Extend + offs_o,
+            acc / deno[:, None],
+            mask=mask_m[:, None] & mask_dv[None, :],
+        )
 
 
 def extend_attention_fwd(
