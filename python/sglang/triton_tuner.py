@@ -1,6 +1,7 @@
 import builtins
 import inspect
 import os
+import pickle
 import time
 from typing import Dict
 
@@ -26,8 +27,6 @@ def do_bench_cudagraph(fn, rep=20, quantiles=None, return_mode="mean"):
     :type fn: Callable
     :param rep: Repetition time (in ms)
     :type rep: int
-    :param grad_to_none: Reset the gradient of the provided tensor to None
-    :type grad_to_none: torch.tensor, optional
     :param return_mode: The statistical measure to return. Options are "min", "max", "mean", "median", or "all" Default is "mean".
     :type return_mode: str
     """
@@ -84,6 +83,26 @@ class Autotuner:
         return lambda *args, **kwargs: self.run(
             grid=grid, warmup=False, *args, **kwargs
         )
+
+    def cache_file_name(self):
+        import torch
+
+        dev_props = torch.cuda.get_device_properties(0)
+        gfx_arch = (
+            f"{dev_props.gcnArchName.split(':')[0]}_{dev_props.multi_processor_count}cu"
+        )
+        dir = os.path.join(os.environ.get("AITER_CACHE_DIR", "/tmp"), gfx_arch)
+        if not os.path.exists(dir):
+            os.makedirs(dir, exist_ok=True)
+        return os.path.join(dir, self.base_fn.__name__)
+
+    def load_cache(self, cache_file):
+        with open(cache_file, "rb") as file:
+            self.cache = pickle.load(file)
+
+    def dump_cache(self, cache_file):
+        with open(cache_file, "wb") as file:
+            pickle.dump(self.cache, file)
 
     def __init__(
         self,
@@ -161,6 +180,10 @@ class Autotuner:
         self.base_fn = fn
         while not inspect.isfunction(self.base_fn):
             self.base_fn = self.base_fn.fn
+        self.cache_file = self.cache_file_name()
+        if os.path.exists(self.cache_file):
+            self.load_cache(self.cache_file)
+
         self.num_warmups = warmup
         self.num_reps = rep
 
@@ -187,9 +210,7 @@ class Autotuner:
 
             self.post_hook(args, exception=None)
 
-        return do_bench_cudagraph(
-            kernel_call, rep=self.num_reps, quantiles=(0.5, 0.2, 0.8)
-        )
+        return do_bench_cudagraph(kernel_call, rep=self.num_reps)
 
     def run(self, *args, **kwargs):
         self.nargs = dict(zip(self.arg_names, args))
@@ -205,7 +226,9 @@ class Autotuner:
                 if hasattr(arg, "dtype"):
                     key.append(str(arg.dtype))
             key = tuple(key)
-            if key not in self.cache:
+            if key not in self.cache or os.environ.get(
+                "AITER_TUNER_FORCE_TUNING", None
+            ):
                 # prune configs
                 used_cached_result = False
                 pruned_configs = self.prune_configs(kwargs)
@@ -219,10 +242,12 @@ class Autotuner:
                 self.cache[key] = builtins.min(timings, key=timings.get)
                 self.pre_hook(args, reset_only=True)
                 self.configs_timings = timings
+                self.dump_cache(self.cache_file)
             config = self.cache[key]
         else:
             config = self.configs[0]
         self.best_config = config
+        # print(self.configs_timings)
         if os.getenv("TRITON_PRINT_AUTOTUNING", None) == "1" and not used_cached_result:
             print(
                 f"Triton autotuning for function {self.base_fn.__name__} finished after "
