@@ -166,7 +166,7 @@ class EPMoE(torch.nn.Module):
                 quant_config
             )
             self.use_fp8_w8a8 = True
-            self.fp8_dtype = torch.float8_e4m3fn
+            self.fp8_dtype = torch.float8_e4m3fnuz if is_hip_ else torch.float8_e4m3fn
             self.activation_scheme = quant_config.activation_scheme
         if is_hip_ and os.getenv("SGLANG_ROCM_AITER_BLOCK_MOE") == "1":
             self.routed_scaling_factor = routed_scaling_factor
