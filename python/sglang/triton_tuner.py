@@ -226,8 +226,8 @@ class Autotuner:
                 if hasattr(arg, "dtype"):
                     key.append(str(arg.dtype))
             key = tuple(key)
-            if key not in self.cache or os.environ.get(
-                "AITER_TUNER_FORCE_TUNING", None
+            if (key not in self.cache) or (
+                os.environ.get("AITER_TUNER_FORCE_TUNING", False)
             ):
                 # prune configs
                 used_cached_result = False
@@ -247,7 +247,7 @@ class Autotuner:
         else:
             config = self.configs[0]
         self.best_config = config
-        # print(self.configs_timings)
+
         if os.getenv("TRITON_PRINT_AUTOTUNING", None) == "1" and not used_cached_result:
             print(
                 f"Triton autotuning for function {self.base_fn.__name__} finished after "
