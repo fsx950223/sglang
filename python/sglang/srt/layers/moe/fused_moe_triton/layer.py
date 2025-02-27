@@ -27,6 +27,8 @@ else:
 
 import logging
 
+from aiter.ops.shuffle import shuffle_weight
+
 is_hip_ = is_hip()
 
 logger = logging.getLogger(__name__)
@@ -262,6 +264,8 @@ class FusedMoE(torch.nn.Module):
         correction_bias: Optional[torch.Tensor] = None,
         activation: str = "silu",
         use_presharded_weights: bool = False,
+        num_shared_experts: Optional[int] = 0,
+        routed_scaling_factor: Optional[float] = 1.0,
     ):
         super().__init__()
 
@@ -285,6 +289,7 @@ class FusedMoE(torch.nn.Module):
         self.custom_routing_function = custom_routing_function
         self.correction_bias = correction_bias
         self.activation = activation
+        self.routed_scaling_factor = routed_scaling_factor
 
         if quant_config is None:
             self.quant_method: Optional[QuantizeMethodBase] = (
@@ -297,6 +302,7 @@ class FusedMoE(torch.nn.Module):
         self.quant_method.create_weights(
             layer=self,
             num_experts=num_experts,
+            num_shared_experts=num_shared_experts,
             hidden_size=hidden_size,
             # FIXME: figure out which intermediate_size to use
             intermediate_size=self.intermediate_size_per_partition,
@@ -305,6 +311,7 @@ class FusedMoE(torch.nn.Module):
             weight_loader=self.weight_loader,
         )
         self.use_presharded_weights = use_presharded_weights
+        self.aiter_shuffle = False
 
     def _load_per_tensor_weight_scale(
         self,
@@ -585,6 +592,12 @@ class FusedMoE(torch.nn.Module):
     def forward(self, hidden_states: torch.Tensor, router_logits: torch.Tensor):
         assert self.quant_method is not None
 
+        if is_hip_ and get_bool_env_var("SGLANG_ROCM_AITER_BLOCK_MOE"):
+            if not self.aiter_shuffle:
+                self.w13_weight.data = shuffle_weight(self.w13_weight, (16, 16))
+                self.w2_weight.data = shuffle_weight(self.w2_weight, (16, 16))
+                self.aiter_shuffle = True
+
         # Matrix multiply.
         final_hidden_states = self.quant_method.apply(
             layer=self,
@@ -612,6 +625,7 @@ class FusedMoE(torch.nn.Module):
         ckpt_down_proj_name: str,
         ckpt_up_proj_name: str,
         num_experts: int,
+        num_shared_experts: Optional[int] = 0,
     ) -> List[Tuple[str, str, int, str]]:
 
         return [
@@ -627,6 +641,27 @@ class FusedMoE(torch.nn.Module):
                 shard_id,
             )
             for expert_id in range(num_experts)
+            for shard_id, weight_name in [
+                ("w1", ckpt_gate_proj_name),
+                ("w2", ckpt_down_proj_name),
+                ("w3", ckpt_up_proj_name),
+            ]
+        ] + [
+            (
+                (
+                    "experts.w13_"
+                    if weight_name in [ckpt_gate_proj_name, ckpt_up_proj_name]
+                    else "experts.w2_"
+                ),
+                (
+                    f"shared_experts.{expert_id}.{weight_name}."
+                    if num_shared_experts >= 2
+                    else f"shared_experts.{weight_name}."
+                ),
+                -num_shared_experts + expert_id,
+                shard_id,
+            )
+            for expert_id in range(num_shared_experts)
             for shard_id, weight_name in [
                 ("w1", ckpt_gate_proj_name),
                 ("w2", ckpt_down_proj_name),

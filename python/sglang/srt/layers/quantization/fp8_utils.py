@@ -15,6 +15,8 @@ _is_cuda = torch.cuda.is_available() and torch.version.cuda
 if _is_cuda:
     from sgl_kernel import fp8_blockwise_scaled_mm
 
+ck_block_gemm = bool(int(os.getenv("CK_BLOCK_GEMM", "0")))
+
 
 def normalize_e4m3fn_to_e4m3fnuz(
     weight: torch.Tensor,
@@ -67,21 +69,18 @@ def apply_w8a8_block_fp8_linear(
     # View input as 2D matrix for fp8 methods
     input_2d = input.view(-1, input.shape[-1])
     output_shape = [*input.shape[:-1], weight.shape[0]]
-    # TODO: add more robust shape check here
-    shape_supported_by_cutlass = (
-        weight.shape[0] % 128 == 0 and weight.shape[1] % 128 == 0
-    )
-    if CUTLASS_BLOCK_FP8_SUPPORTED and shape_supported_by_cutlass:
-        q_input, x_scale = per_token_group_quant_fp8(
-            input_2d, block_size[1], column_major_scales=True
+
+    q_input, x_scale = per_token_group_quant_fp8(input_2d, block_size[1])
+    if is_hip_ and ck_block_gemm:
+        from aiter import gemm_a8w8_blockscale
+
+        output = torch.zeros(
+            [q_input.shape[0], weight.shape[0]],
+            dtype=input.dtype,
+            device=q_input.device,
         )
-        output = fp8_blockwise_scaled_mm(
-            q_input, weight.T, x_scale, weight_scale.T, out_dtype=input.dtype
-        )
+        gemm_a8w8_blockscale(q_input, weight, x_scale, weight_scale, output)
     else:
-        q_input, x_scale = per_token_group_quant_fp8(
-            input_2d, block_size[1], column_major_scales=False
-        )
         output = w8a8_block_fp8_matmul(
             q_input, weight, x_scale, weight_scale, block_size, output_dtype=input.dtype
         )

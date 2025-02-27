@@ -35,9 +35,9 @@ from typing import TYPE_CHECKING, List, Optional, Set, Tuple, Union
 
 import numpy as np
 import torch
+
 import triton
 import triton.language as tl
-
 from sglang.global_config import global_config
 from sglang.srt.configs.model_config import ModelConfig
 from sglang.srt.constrained.base_grammar_backend import BaseGrammarObject
@@ -63,6 +63,7 @@ global_server_args_dict = {
     "torchao_config": ServerArgs.torchao_config,
     "enable_nan_detection": ServerArgs.enable_nan_detection,
     "enable_dp_attention": ServerArgs.enable_dp_attention,
+    "enable_dp_linear": ServerArgs.enable_dp_linear,
     "enable_ep_moe": ServerArgs.enable_ep_moe,
     "device": ServerArgs.device,
     "enable_flashinfer_mla": ServerArgs.enable_flashinfer_mla,
