@@ -930,6 +930,7 @@ def fused_experts(
                 topk_ids,
                 activation,
                 use_fp8_w8a8,
+                use_int8_w8a8,
                 use_int8_w8a16,
                 w1_scale,
                 w2_scale,
