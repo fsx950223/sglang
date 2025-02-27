@@ -215,7 +215,11 @@ class Autotuner:
     def run(self, *args, **kwargs):
         self.nargs = dict(zip(self.arg_names, args))
         used_cached_result = True
-        if len(self.configs) > 1:
+        if inspect.isfunction(self.configs):
+            configs = self.configs(*args, **kwargs)
+        else:
+            configs = self.configs
+        if len(configs) > 1:
             all_args = {**self.nargs, **kwargs}
             _args = []
             for name in self.arg_names:
@@ -231,11 +235,11 @@ class Autotuner:
             ):
                 # prune configs
                 used_cached_result = False
-                pruned_configs = self.prune_configs(kwargs)
+                # pruned_configs = self.prune_configs(kwargs)
                 bench_start = time.time()
                 timings = {
                     config: self._bench(*args, config=config, **kwargs)
-                    for config in pruned_configs
+                    for config in configs
                 }
                 bench_end = time.time()
                 self.bench_time = bench_end - bench_start
@@ -245,7 +249,7 @@ class Autotuner:
                 self.dump_cache(self.cache_file)
             config = self.cache[key]
         else:
-            config = self.configs[0]
+            config = configs[0]
         self.best_config = config
 
         if os.getenv("TRITON_PRINT_AUTOTUNING", None) == "1" and not used_cached_result:
