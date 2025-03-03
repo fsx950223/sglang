@@ -39,6 +39,13 @@ TORCH_LIBRARY_EXPAND(sgl_kernels, m) {
       "Tensor! tree_mask, Tensor! positions, Tensor! retrive_index, "
       "int topk, int depth, int draft_token_num) -> ()");
   m.impl("build_tree_kernel", torch::kCUDA, &build_tree_kernel);
+
+  m.def(
+      "tree_speculative_sampling_target_only(Tensor! predicts, Tensor! accept_index, Tensor! accept_token_num, "
+      "Tensor candidates, Tensor retrive_index, Tensor retrive_next_token, Tensor retrive_next_sibling, "
+      "Tensor uniform_samples, Tensor target_probs, Tensor draft_probs, "
+      "bool deterministic, int cuda_stream) -> ()");
+  m.impl("tree_speculative_sampling_target_only", torch::kCUDA, &tree_speculative_sampling_target_only);
 }
 
 REGISTER_EXTENSION(_kernels)
