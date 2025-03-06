@@ -18,7 +18,40 @@ from sglang.srt.speculative.build_eagle_tree import (
 )
 
 if torch.cuda.is_available():
-    from aiter import tree_speculative_sampling_target_only
+    if torch.version.hip:
+        from aiter import (
+            tree_speculative_sampling_target_only as aiter_tree_speculative_sampling_target_only,
+        )
+
+        def tree_speculative_sampling_target_only(
+            predicts: torch.Tensor,  # mutable
+            accept_index: torch.Tensor,  # mutable
+            accept_token_num: torch.Tensor,  # mutable
+            candidates: torch.Tensor,
+            retrive_index: torch.Tensor,
+            retrive_next_token: torch.Tensor,
+            retrive_next_sibling: torch.Tensor,
+            uniform_samples: torch.Tensor,
+            target_probs: torch.Tensor,
+            draft_probs: torch.Tensor,
+            deterministic: bool = True,
+        ) -> None:
+            aiter_tree_speculative_sampling_target_only(
+                predicts,
+                accept_index,
+                accept_token_num,
+                candidates,
+                retrive_index,
+                retrive_next_token,
+                retrive_next_sibling,
+                uniform_samples,
+                target_probs,
+                draft_probs,
+                deterministic,
+            )
+
+    else:
+        from sgl_kernel import tree_speculative_sampling_target_only
 
 if TYPE_CHECKING:
     from sglang.srt.managers.schedule_batch import ScheduleBatch
