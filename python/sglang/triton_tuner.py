@@ -6,10 +6,10 @@ import pickle
 import time
 from typing import Dict
 
+import torch
+
 
 def _summarize_statistics(times, quantiles, return_mode):
-    import torch
-
     if quantiles is not None:
         ret = torch.quantile(times, torch.tensor(quantiles, dtype=torch.float)).tolist()
         if len(ret) == 1:
@@ -31,8 +31,6 @@ def do_bench_cudagraph(fn, rep=20, quantiles=None, return_mode="mean"):
     :param return_mode: The statistical measure to return. Options are "min", "max", "mean", "median", or "all" Default is "mean".
     :type return_mode: str
     """
-    import torch
-
     assert return_mode in ["min", "max", "mean", "median", "all"]
 
     with torch.cuda.stream(torch.cuda.Stream()):
@@ -86,8 +84,6 @@ class Autotuner:
         )
 
     def cache_file_name(self):
-        import torch
-
         dev_props = torch.cuda.get_device_properties(0)
         gfx_arch = (
             f"{dev_props.gcnArchName.split(':')[0]}_{dev_props.multi_processor_count}cu"
@@ -99,12 +95,12 @@ class Autotuner:
         filename = hashlib.md5(filename.encode("utf-8")).hexdigest()
         return os.path.join(dir, filename)
 
-    def load_cache(self, cache_file):
-        with open(cache_file, "rb") as file:
+    def load_cache(self):
+        with open(self.cache_file, "rb") as file:
             self.cache = pickle.load(file)
 
-    def dump_cache(self, cache_file):
-        with open(cache_file, "wb") as file:
+    def dump_cache(self):
+        with open(self.cache_file, "wb") as file:
             pickle.dump(self.cache, file)
 
     def __init__(
@@ -185,7 +181,7 @@ class Autotuner:
             self.base_fn = self.base_fn.fn
         self.cache_file = self.cache_file_name()
         if os.path.exists(self.cache_file):
-            self.load_cache(self.cache_file)
+            self.load_cache()
 
         self.num_warmups = warmup
         self.num_reps = rep
@@ -249,7 +245,7 @@ class Autotuner:
                 self.cache[key] = builtins.min(timings, key=timings.get)
                 self.pre_hook(args, reset_only=True)
                 self.configs_timings = timings
-                self.dump_cache(self.cache_file)
+                self.dump_cache()
             config = self.cache[key]
         else:
             config = configs[0]
@@ -443,41 +439,5 @@ def autotune(
             warmup=warmup,
             rep=rep,
         )
-
-    return decorator
-
-
-class Heuristics:
-
-    def __init__(self, fn, arg_names, values) -> None:
-        self.fn = fn
-        self.values = values
-        self.arg_names = arg_names
-
-    def run(self, *args, **kwargs):
-        for v, heur in self.values.items():
-            kwargs[v] = heur({**dict(zip(self.arg_names, args)), **kwargs})
-        return self.fn.run(*args, **kwargs)
-
-
-def heuristics(values):
-    """
-    Decorator for specifying how the values of certain meta-parameters may be computed.
-    This is useful for cases where auto-tuning is prohibitevely expensive, or just not applicable.
-
-    .. highlight:: python
-    .. code-block:: python
-
-        @triton.heuristics(values={'BLOCK_SIZE': lambda args: 2 ** int(math.ceil(math.log2(args[1])))})
-        @triton.jit
-        def kernel(x_ptr, x_size, **META):
-            BLOCK_SIZE = META['BLOCK_SIZE'] # smallest power-of-two >= x_size
-    :param values: a dictionary of meta-parameter names and functions that compute the value of the meta-parameter.
-                   each such function takes a list of positional arguments as input.
-    :type values: dict[str, Callable[[list[Any]], Any]]
-    """
-
-    def decorator(fn):
-        return Heuristics(fn, fn.arg_names, values)
 
     return decorator
