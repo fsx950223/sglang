@@ -1,4 +1,5 @@
 import builtins
+import hashlib
 import inspect
 import os
 import pickle
@@ -94,7 +95,9 @@ class Autotuner:
         dir = os.path.join(os.environ.get("AITER_CACHE_DIR", "/tmp"), gfx_arch)
         if not os.path.exists(dir):
             os.makedirs(dir, exist_ok=True)
-        return os.path.join(dir, self.base_fn.__name__)
+        filename = "_".join([self.base_fn.__name__] + self.arg_names)
+        filename = hashlib.md5(filename.encode("utf-8")).hexdigest()
+        return os.path.join(dir, filename)
 
     def load_cache(self, cache_file):
         with open(cache_file, "rb") as file:
