@@ -5,9 +5,9 @@ from typing import TYPE_CHECKING, List
 
 import torch
 import torch.nn.functional as F
+
 import triton
 import triton.language as tl
-
 from sglang.srt.layers.attention.flashinfer_backend import (
     create_flashinfer_kv_indices_triton,
 )
@@ -16,10 +16,9 @@ from sglang.srt.speculative.build_eagle_tree import (
     build_tree_kernel,
     build_tree_kernel_efficient,
 )
-from sglang.srt.utils import is_cuda_available
 
-if is_cuda_available():
-    from sgl_kernel import tree_speculative_sampling_target_only
+if torch.cuda.is_available():
+    from aiter import tree_speculative_sampling_target_only
 
 if TYPE_CHECKING:
     from sglang.srt.managers.schedule_batch import ScheduleBatch
